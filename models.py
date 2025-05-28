@@ -1,9 +1,12 @@
 """Models for the Autoskope API."""
 
 from dataclasses import dataclass
+import logging
 from typing import Any, TypedDict
 
 from .constants import DEFAULT_MODEL, DEVICE_TYPE_MODELS
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class GeoJsonProperties(TypedDict, total=False):
@@ -85,7 +88,7 @@ def _find_and_parse_position(
         properties = feature["properties"]
 
         # Parse coordinates and properties
-        latitude, longitude = geometry["coordinates"]
+        longitude, latitude = geometry["coordinates"]
         speed = float(properties["s"])
         timestamp = properties["dt"]
         park_mode = bool(properties["park"])
@@ -132,8 +135,30 @@ class Vehicle:
         except (KeyError, ValueError, TypeError) as err:
             raise ValueError(f"Invalid vehicle data structure: {err}") from err
 
-        # Use helper function to find position
-        position = _find_and_parse_position(position_data)
+        # Find the matching position feature for this vehicle
+        position = None
+        if position_data and "features" in position_data:
+            for feature in position_data["features"]:
+                try:
+                    carid = str(feature["properties"].get("carid"))
+                    if carid == vehicle_id:
+                        geometry = feature["geometry"]
+                        properties = feature["properties"]
+                        longitude, latitude = geometry["coordinates"]
+                        speed = float(properties.get("s", 0))
+                        timestamp = properties.get("dt", "")
+                        park_mode = bool(properties.get("park", False))
+                        position = VehiclePosition(
+                            latitude=latitude,
+                            longitude=longitude,
+                            speed=speed,
+                            timestamp=timestamp,
+                            park_mode=park_mode,
+                        )
+                        break
+                except (KeyError, TypeError, ValueError) as e:
+                    _LOGGER.debug("Exception while matching carid: %s", e)
+                    continue
 
         # Use .get() for optional fields/dicts
         support_infos = info.get("support_infos")

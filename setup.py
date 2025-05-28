@@ -1,8 +1,10 @@
-from setuptools import setup, find_packages
+"""Setup script for the Autoskope client library."""
+
+from setuptools import find_packages, setup
 
 setup(
     name="autoskope_client",
-    version="0.1.0",
+    version="1.0.0",
     description="Python client library for the Autoskope API.",
     author="Nico Liebeskind",
     author_email="nico@autoskope.de",

@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+setup.py
+autoskope_client.egg-info/PKG-INFO
+autoskope_client.egg-info/SOURCES.txt
+autoskope_client.egg-info/dependency_links.txt
+autoskope_client.egg-info/requires.txt
+autoskope_client.egg-info/top_level.txt

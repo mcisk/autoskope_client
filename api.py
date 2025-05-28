@@ -192,42 +192,67 @@ class AutoskopeApi:
                 session,
                 "post",
                 "/scripts/ajax/app/info.php",
-                data={
-                    "appversion": APP_VERSION
-                },
+                data={"appversion": APP_VERSION},
                 timeout=20,
             )
 
-            position_data = None
+            # Parse lastPos as a FeatureCollection and build a carid->feature map
             last_pos_str = data.get("lastPos")
+            carid_to_feature = {}
             if isinstance(last_pos_str, str) and last_pos_str:
                 try:
-                    position_data = json.loads(last_pos_str)
-                    if not isinstance(position_data, dict):
-                        _LOGGER.warning("Parsed lastPos data is not a dictionary")
-                        position_data = None  # Treat as invalid
+                    pos_geojson = json.loads(last_pos_str)
+                    if (
+                        isinstance(pos_geojson, dict)
+                        and pos_geojson.get("type") == "FeatureCollection"
+                        and isinstance(pos_geojson.get("features"), list)
+                    ):
+                        for feature in pos_geojson["features"]:
+                            if (
+                                isinstance(feature, dict)
+                                and isinstance(feature.get("properties"), dict)
+                                and "carid" in feature["properties"]
+                            ):
+                                carid = str(feature["properties"]["carid"])
+                                carid_to_feature[carid] = feature
+                        _LOGGER.debug(
+                            "Built carid_to_feature map with %d entries",
+                            len(carid_to_feature),
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "Parsed lastPos data is not a valid FeatureCollection"
+                        )
                 except json.JSONDecodeError:
-                    _LOGGER.warning("Failed to parse lastPos JSON string")
-            elif last_pos_str is not None:  # Log if it exists but isn't a string
-                _LOGGER.warning(
+                    _LOGGER.debug("Failed to parse lastPos JSON string")
+            elif last_pos_str is not None:
+                _LOGGER.debug(
                     "The lastPos data is not a string: %s", type(last_pos_str)
                 )
 
             cars_list = data.get("cars", [])
+            _LOGGER.debug(
+                "Received cars list with %d vehicles",
+                len(cars_list) if isinstance(cars_list, list) else 0,
+            )
             if not isinstance(cars_list, list):
                 _LOGGER.error("Vehicle data 'cars' is not a list")
-                # Store error for invalid format
                 error_to_raise = CannotConnect(
                     "Invalid vehicle data format in API response"
                 )
             else:
-                # Process cars only if format is correct
                 for car_info in cars_list:
                     if not isinstance(car_info, dict):
                         _LOGGER.warning("Skipping non-dictionary item in cars list")
                         continue
                     try:
-                        # Attempt to create Vehicle object
+                        car_id = str(car_info.get("id"))
+                        vehicle_position_data = carid_to_feature.get(car_id)
+                        if vehicle_position_data:
+                            # Wrap the single feature in a FeatureCollection format
+                            position_data = {"features": [vehicle_position_data]}
+                        else:
+                            position_data = None
                         vehicles.append(
                             Vehicle.from_api(
                                 car_info,  # type: ignore[arg-type]
@@ -235,7 +260,6 @@ class AutoskopeApi:
                             )
                         )
                     except ValueError as e:
-                        # Log errors during individual vehicle parsing but continue
                         vehicle_id = car_info.get("id", "unknown")
                         _LOGGER.warning(
                             "Failed to parse vehicle data for ID %s: %s",

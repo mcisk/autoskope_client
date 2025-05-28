@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: autoskope_client
+Version: 0.1.6
+Summary: Python client library for the Autoskope API.
+Home-page: https://github.com/mcisk/autoskope_client
+Author: Nico Liebeskind
+Author-email: nico@autoskope.de
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Requires-Dist: aiohttp>=3.8.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
