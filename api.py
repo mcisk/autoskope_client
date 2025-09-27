@@ -20,17 +20,71 @@ class AutoskopeApi:
         host: str,
         username: str,
         password: str,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
-        """Initialize the Autoskope API client."""
+        """Initialize the Autoskope API client.
+
+        Args:
+            host: API host URL
+            username: Account username
+            password: Account password
+            session: Optional external session (for non-cookie scenarios)
+        """
         self._host = host.rstrip("/")
         self._username = username
         self._password = password
+        self._authenticated = False
         self._form_headers = {"Content-Type": "application/x-www-form-urlencoded"}
         self._json_headers = {"Content-Type": "application/json"}
 
+        if session:
+            self._session = session
+            self._owns_session = False
+            self._cookie_jar = None
+        else:
+            self._session = None
+            self._owns_session = True
+            self._cookie_jar = aiohttp.CookieJar()
+
+    async def __aenter__(self) -> "AutoskopeApi":
+        """Context manager entry - connect and authenticate."""
+        try:
+            await self.connect()
+            return self
+        except:
+            # Ensure cleanup if connect fails
+            await self.close()
+            raise
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit - cleanup session."""
+        await self.close()
+
+    async def connect(self) -> None:
+        """Create session (if needed) and authenticate."""
+        if self._owns_session and not self._session:
+            self._session = aiohttp.ClientSession(
+                cookie_jar=self._cookie_jar,
+                headers={"User-Agent": f"autoskope-client/{APP_VERSION}"},
+            )
+
+        if not self._authenticated:
+            await self.authenticate()
+
+    async def close(self) -> None:
+        """Close session if owned by this instance."""
+        if self._session and self._owns_session:
+            await self._session.close()
+            self._session = None
+        self._authenticated = False
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if API is connected and authenticated."""
+        return self._session is not None and self._authenticated
+
     async def _request(
         self,
-        session: aiohttp.ClientSession,
         method: str,
         path: str,
         data: dict[str, Any] | None = None,
@@ -38,8 +92,11 @@ class AutoskopeApi:
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Make an API request and handle responses."""
+        if not self._session:
+            raise RuntimeError("Not connected. Call connect() first or use context manager.")
+
         url = f"{self._host}{path}"
-        headers = self._form_headers  # Default to form headers
+        headers = self._form_headers
 
         _LOGGER.debug("Requesting %s %s", method.upper(), url)
 
@@ -48,7 +105,7 @@ class AutoskopeApi:
         error_to_raise: Exception | None = None
 
         try:
-            async with session.request(
+            async with self._session.request(
                 method,
                 url,
                 headers=headers,
@@ -61,7 +118,6 @@ class AutoskopeApi:
 
                 response_text = await response.text()
 
-                # Handle status 202 specifically: Success, but check for outdated message
                 if response_status == 202:
                     _LOGGER.debug(
                         "Login response body (status 202): %s", response_text[:200]
@@ -74,7 +130,6 @@ class AutoskopeApi:
                             if isinstance(message, str) and message.startswith(
                                 "Du verwendest eine veraltete App-Version"
                             ):
-                                # Log as warning but continue as success
                                 _LOGGER.debug(
                                     "API reports outdated client version, but proceeding: %s",
                                     message,
@@ -83,10 +138,8 @@ class AutoskopeApi:
                         _LOGGER.debug(
                             "Received non-JSON response on status 202, proceeding anyway"
                         )
-                    # Treat status 202 as successful authentication by returning empty dict
                     return {}
 
-                # Handle login response specifically (Status 200)
                 if path == "/scripts/ajax/login.php":
                     _LOGGER.debug(
                         "Login response body (status %s): %s",
@@ -94,36 +147,28 @@ class AutoskopeApi:
                         response_text[:200],
                     )
                     if response_status == 200 and not response_text.strip():
-                        return {}  # Success, return empty dict
-                    # Store error for login failure (non-200 or non-empty body)
+                        return {}
                     error_to_raise = InvalidAuth(
                         "Authentication failed (non-200 status or non-empty body)"
                     )
-                # Check for auth errors (e.g., wrong password, session expired)
                 elif response_status in (401, 403):
                     error_to_raise = InvalidAuth(
                         f"Authorization error: {response_status}"
                     )
-                # Check for other client/server errors
                 elif response_status >= 400:
-                    # Store error for other bad statuses
                     error_to_raise = CannotConnect(
                         f"API request failed with status {response_status}"
                     )
-                # Process successful response (usually 200 for non-login requests)
                 else:
-                    # Try parsing as JSON, even if content-type isn't strictly JSON
                     try:
                         response_json = json.loads(response_text)
                         if not isinstance(response_json, dict):
                             _LOGGER.warning("API response is not a JSON dictionary")
-                            # Store error for unexpected format
                             error_to_raise = CannotConnect(
                                 "Received non-dictionary JSON response from API"
                             )
                     except json.JSONDecodeError as json_err:
                         _LOGGER.error("Failed to decode API response: %s", json_err)
-                        # Store error for invalid format
                         error_to_raise = CannotConnect(
                             "Received invalid response from API"
                         )
@@ -131,72 +176,72 @@ class AutoskopeApi:
 
         except aiohttp.ClientError as err:
             _LOGGER.error("API request connection error for %s: %s", url, err)
-            # Raise CannotConnect for network/connection issues
             raise CannotConnect(f"Error connecting to Autoskope API: {err}") from err
         except Exception as err:
-            # Catch any other unexpected errors during the request process
             _LOGGER.exception("Unexpected error during API request to %s", url)
-            # Raise CannotConnect for unexpected issues during request
             raise CannotConnect(f"Unexpected API error: {err}") from err
 
-        # Raise any stored errors after the try block
         if error_to_raise:
             raise error_to_raise
 
-        # Return the processed JSON response if no errors occurred
-        # Ensure a dict is returned even if parsing failed but no error was stored
         return response_json if response_json is not None else {}
 
-    async def authenticate(self, session: aiohttp.ClientSession) -> bool:
+    async def authenticate(self) -> bool:
         """Authenticate with the API and verify success."""
+        if not self._session:
+            raise RuntimeError("Not connected. Call connect() first.")
+
         try:
-            # Request returns empty dict on success, raises on failure
             await self._request(
-                session,
                 "post",
                 "/scripts/ajax/login.php",
                 data={
                     "username": self._username,
                     "password": self._password,
-                    "appversion": APP_VERSION,  # Use the constant instead of hardcoding
+                    "appversion": APP_VERSION,
                 },
                 timeout=10,
             )
         except InvalidAuth as err:
             _LOGGER.warning("Authentication failed for user %s", self._username)
+            self._authenticated = False
             raise InvalidAuth("Authentication failed") from err
         except CannotConnect as err:
             _LOGGER.error(
                 "Connection error during authentication for user %s", self._username
             )
+            self._authenticated = False
             raise CannotConnect("Connection error during authentication") from err
         except Exception as err:
             _LOGGER.exception(
                 "Unexpected error during authentication for user %s", self._username
             )
+            self._authenticated = False
             raise CannotConnect(
                 f"Unexpected error during authentication: {err}"
             ) from err
         else:
             _LOGGER.debug("Authentication successful for user %s", self._username)
+            self._authenticated = True
             return True
 
-    async def get_vehicles(self, session: aiohttp.ClientSession) -> list[Vehicle]:
+    async def get_vehicles(self) -> list[Vehicle]:
         """Fetch and parse vehicles data from the API."""
+        if not self._session:
+            raise RuntimeError("Not connected. Call connect() first.")
+
         _LOGGER.debug("Attempting to fetch vehicle data")
         vehicles: list[Vehicle] = []
         error_to_raise: Exception | None = None
 
         try:
             data = await self._request(
-                session,
                 "post",
                 "/scripts/ajax/app/info.php",
                 data={"appversion": APP_VERSION},
                 timeout=20,
             )
 
-            # Parse lastPos as a FeatureCollection and build a carid->feature map
             last_pos_str = data.get("lastPos")
             carid_to_feature = {}
             if isinstance(last_pos_str, str) and last_pos_str:
@@ -249,13 +294,12 @@ class AutoskopeApi:
                         car_id = str(car_info.get("id"))
                         vehicle_position_data = carid_to_feature.get(car_id)
                         if vehicle_position_data:
-                            # Wrap the single feature in a FeatureCollection format
                             position_data = {"features": [vehicle_position_data]}
                         else:
                             position_data = None
                         vehicles.append(
                             Vehicle.from_api(
-                                car_info,  # type: ignore[arg-type]
+                                car_info,
                                 position_data,
                             )
                         )
@@ -269,6 +313,7 @@ class AutoskopeApi:
 
         except InvalidAuth as err:
             _LOGGER.error("Authentication error during vehicle fetch")
+            self._authenticated = False
             raise CannotConnect("Authentication required") from err
         except CannotConnect as err:
             _LOGGER.error(
@@ -278,16 +323,13 @@ class AutoskopeApi:
                 f"Failed to fetch data from Autoskope API: {err}"
             ) from err
         except Exception as err:
-            # Catch any other unexpected errors during processing
             _LOGGER.exception("Unexpected error processing vehicle data")
             raise CannotConnect(
                 f"Unexpected error processing vehicle data: {err}"
             ) from err
 
-        # Raise stored errors after try block (e.g., format errors)
         if error_to_raise:
             raise error_to_raise
 
-        # Return vehicles list if no fatal errors occurred
         _LOGGER.debug("Successfully parsed %d vehicles", len(vehicles))
         return vehicles
