@@ -314,7 +314,7 @@ class AutoskopeApi:
         except InvalidAuth as err:
             _LOGGER.error("Authentication error during vehicle fetch")
             self._authenticated = False
-            raise CannotConnect("Authentication required") from err
+            raise InvalidAuth("Authentication required") from err
         except CannotConnect as err:
             _LOGGER.error(
                 "Failed to fetch vehicle data due to connection/API error: %s", err
