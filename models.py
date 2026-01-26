@@ -100,8 +100,8 @@ def _find_and_parse_position(
             timestamp=timestamp,
             park_mode=park_mode,
         )
-    except (KeyError, ValueError, TypeError, IndexError):
-        # Log or handle parsing errors if needed
+    except (KeyError, ValueError, TypeError, IndexError) as e:
+        _LOGGER.debug("Failed to parse position data: %s", e)
         return None
 
 

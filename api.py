@@ -21,6 +21,7 @@ class AutoskopeApi:
         username: str,
         password: str,
         session: aiohttp.ClientSession | None = None,
+        timeout: int = 20,
     ) -> None:
         """Initialize the Autoskope API client.
 
@@ -29,10 +30,21 @@ class AutoskopeApi:
             username: Account username
             password: Account password
             session: Optional external session (for non-cookie scenarios)
+            timeout: Request timeout in seconds (default: 20)
+
+        Raises:
+            ValueError: If host is not a valid HTTP(S) URL
         """
+        # Validate host URL
+        if not host.startswith(("http://", "https://")):
+            raise ValueError(
+                f"Host must be a valid HTTP(S) URL, got: {host}"
+            )
+
         self._host = host.rstrip("/")
         self._username = username
         self._password = password
+        self._timeout = timeout
         self._authenticated = False
         self._form_headers = {"Content-Type": "application/x-www-form-urlencoded"}
         self._json_headers = {"Content-Type": "application/json"}
@@ -44,14 +56,14 @@ class AutoskopeApi:
         else:
             self._session = None
             self._owns_session = True
-            self._cookie_jar = aiohttp.CookieJar()
+            self._cookie_jar = None
 
     async def __aenter__(self) -> "AutoskopeApi":
         """Context manager entry - connect and authenticate."""
         try:
             await self.connect()
             return self
-        except:
+        except Exception:
             # Ensure cleanup if connect fails
             await self.close()
             raise
@@ -63,6 +75,9 @@ class AutoskopeApi:
     async def connect(self) -> None:
         """Create session (if needed) and authenticate."""
         if self._owns_session and not self._session:
+            # Create cookie jar lazily when session is created
+            if self._cookie_jar is None:
+                self._cookie_jar = aiohttp.CookieJar()
             self._session = aiohttp.ClientSession(
                 cookie_jar=self._cookie_jar,
                 headers={"User-Agent": f"autoskope-client/{APP_VERSION}"},
@@ -113,7 +128,6 @@ class AutoskopeApi:
                 **kwargs,
             ) as response:
                 response_status = response.status
-                response.headers.get("Content-Type", "").lower()
                 _LOGGER.debug("Response status for %s: %s", url, response_status)
 
                 response_text = await response.text()
@@ -200,7 +214,7 @@ class AutoskopeApi:
                     "password": self._password,
                     "appversion": APP_VERSION,
                 },
-                timeout=10,
+                timeout=self._timeout,
             )
         except InvalidAuth as err:
             _LOGGER.warning("Authentication failed for user %s", self._username)
@@ -239,7 +253,7 @@ class AutoskopeApi:
                 "post",
                 "/scripts/ajax/app/info.php",
                 data={"appversion": APP_VERSION},
-                timeout=20,
+                timeout=self._timeout,
             )
 
             last_pos_str = data.get("lastPos")

@@ -67,6 +67,26 @@ async def main():
 asyncio.run(main())
 ```
 
+### Using Custom Timeout
+
+```python
+import asyncio
+from autoskope_client import AutoskopeApi
+
+async def main():
+    # Set custom timeout (default is 20 seconds)
+    async with AutoskopeApi(
+        host="https://portal.autoskope.de",
+        username="your_username",
+        password="your_password",
+        timeout=30  # Custom timeout in seconds
+    ) as api:
+        vehicles = await api.get_vehicles()
+        print(f"Found {len(vehicles)} vehicles")
+
+asyncio.run(main())
+```
+
 ### Using with External Session
 
 ```python
@@ -106,7 +126,7 @@ asyncio.run(main())
 - `longitude`: Longitude coordinate
 - `speed`: Speed in km/h
 - `timestamp`: Position timestamp
-- `is_parked`: Whether vehicle is parked
+- `park_mode`: Whether vehicle is parked
 
 ## Error Handling
 
@@ -131,6 +151,65 @@ except CannotConnect:
 
 - Python 3.8+
 - aiohttp >= 3.8.0
+
+## Development
+
+### Running Tests
+
+Install test dependencies:
+
+```bash
+pip install -e ".[test]"
+```
+
+Run unit tests only (no API calls):
+
+```bash
+pytest -v -m "not integration"
+```
+
+Run all tests including integration tests (requires credentials):
+
+```bash
+# Set environment variables first
+export AUTOSKOPE_HOST=https://portal.autoskope.de
+export AUTOSKOPE_USERNAME=your_username
+export AUTOSKOPE_PASSWORD=your_password
+
+# Run all tests
+pytest -v
+```
+
+Run tests with coverage:
+
+```bash
+pytest --cov=autoskope_client --cov-report=html
+```
+
+### Integration Tests
+
+Integration tests make real API calls and require valid credentials. They are marked with `@pytest.mark.integration` and will be skipped automatically if credentials are not set.
+
+**Secure way to run integration tests** (recommended):
+
+```bash
+# Option 1: Using the secure test runner (password hidden)
+python run_integration_tests.py
+
+# Option 2: Using .env file
+cp .env.example .env
+# Edit .env with your credentials
+pip install python-dotenv
+python run_integration_tests.py
+```
+
+To run only integration tests:
+
+```bash
+pytest -v -m integration
+```
+
+**Security Note:** Never commit credentials to git. The `.env` file is excluded via `.gitignore`.
 
 ## Author
 

@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="autoskope_client",
-    version="1.3.2",
+    version="1.4.0",
     description="Python client library for the Autoskope API.",
     author="Nico Liebeskind",
     author_email="nico@autoskope.de",
@@ -16,6 +16,13 @@ setup(
     install_requires=[
         "aiohttp>=3.8.0",
     ],
+    extras_require={
+        "test": [
+            "pytest>=7.0.0",
+            "pytest-asyncio>=0.21.0",
+            "python-dotenv>=0.19.0",
+        ],
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",
