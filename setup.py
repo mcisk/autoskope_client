@@ -4,12 +4,12 @@ from setuptools import find_packages, setup
 
 setup(
     name="autoskope_client",
-    version="1.4.0",
+    version="1.4.1",
     description="Python client library for the Autoskope API.",
     author="Nico Liebeskind",
     author_email="nico@autoskope.de",
     url="https://github.com/mcisk/autoskope_client",
-    packages=find_packages(),
+    packages=find_packages(exclude=["tests", "tests.*"]),
     package_data={
         "autoskope_client": ["py.typed"],
     },

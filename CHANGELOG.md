@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-02-18
+
+### Fixed
+- Fix package structure: source files (api.py, constants.py, models.py) were missing from PyPI distribution due to flat directory layout
+- Moved source files into proper `autoskope_client/` subdirectory so `find_packages()` discovers them correctly
+
 ## [1.4.0] - 2026-01-26
 
 ### Added
@@ -62,6 +68,7 @@ All notable changes to this project will be documented in this file.
 - GeoJSON position parsing
 - Type hints throughout the codebase
 
+[1.4.1]: https://github.com/mcisk/autoskope_client/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/mcisk/autoskope_client/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/mcisk/autoskope_client/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/mcisk/autoskope_client/compare/v1.2.0...v1.3.1
